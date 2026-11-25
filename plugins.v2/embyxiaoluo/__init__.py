@@ -163,7 +163,7 @@ class embyxiaoluo(_PluginBase):
     plugin_name = "Emby 聚合通知"
     plugin_desc = "把 Emby 的入库、删除、事件与每日观影报告聚合推送到 Telegram / 飞书；模板可自定义，支持实时预览与测试发送。"
     plugin_icon = "https://raw.githubusercontent.com/xiaoluo-mp/MoviePilot-Local-Plugins/main/plugins.v2/embyxiaoluo/logo.png?v=1.0.17"
-    plugin_version = "1.0.49"
+    plugin_version = "1.0.50"
     plugin_author = "小罗"
     author_url = "https://github.com/xiaoluo-mp/MoviePilot-Local-Plugins"
     plugin_config_prefix = "embyxiaoluo_"
@@ -3010,6 +3010,19 @@ class embyxiaoluo(_PluginBase):
 
     def _dispatch_deleted(self, info: WebhookEventInfo, server_name: str = "") -> None:
         """处理媒体删除事件（library.deleted / ItemRemoved）。"""
+        # 一次删除通常会先后收到「普通删除」和神医助手的 deep.delete 两个事件，
+        # 同一部片在去重窗口内只推一次，避免重复通知。
+        dedup_key = f"deleted|{info.item_id or ''}|{info.item_name or ''}"
+        now = time.time()
+        window = max(int(self._dedup_window or 0), 5)
+        last = self._message_fingerprints.get(dedup_key)
+        if last and now - last < window:
+            logger.info(
+                f"Emby入库通知 删除通知去重：{info.item_name or ''}"
+                f"（{int(now - last)}s 内已推送过）"
+            )
+            return
+        self._message_fingerprints[dedup_key] = now
         is_ep = info.item_type in ("TV", "SHOW", "Episode")
         episode_text = ""
         if is_ep and info.season_id and info.episode_id:
